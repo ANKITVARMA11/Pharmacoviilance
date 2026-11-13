@@ -1,0 +1,18 @@
+# secrets
+.env
+
+# generated
+venv/
+.venv/
+__pycache__/
+.pytest_cache/
+data/faers_raw.jsonl
+data/pairs.jsonl
+data/extractions.jsonl
+data/terms.jsonl
+data/coded.jsonl
+data_*/
+
+# Day 3: these hold report text and your review decisions
+data/audit.jsonl
+data/reviews.jsonl

@@ -1,0 +1,409 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Crew Monitor</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 100 100%27%3E%3Ctext y=%27.9em%27 font-size=%2790%27%3E🛰️%3C/text%3E%3C/svg%3E">
+<style>
+:root{
+  --bg:#f0f2f5; --panel:#ffffff; --ink:#111b21; --muted:#667781; --line:#e1e5e9;
+  --head:#008069; --head-ink:#ffffff; --wall:#efeae2; --wall-dot:#e3dccf;
+  --in:#ffffff; --out:#d9fdd3; --chip:#fff5c4; --chip-ink:#54401b; --sys:#e9edef;
+  --intake:#c2410c; --coding:#7c3aed; --critic:#be123c; --narrative:#0f766e; --reviewer:#15803d; --reporter:#1d4ed8; --manager:#475569;
+  --ok:#15803d; --warn:#b45309; --bad:#b91c1c; --blue:#2563eb;
+  --node:#ffffff; --node-line:#cbd5e1;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --bg:#0b141a; --panel:#111b21; --ink:#e9edef; --muted:#8696a0; --line:#222d34;
+    --head:#202c33; --wall:#0b141a; --wall-dot:#111d24;
+    --in:#202c33; --out:#005c4b; --chip:#182229; --chip-ink:#ffd279; --sys:#182229;
+    --intake:#fb923c; --coding:#a78bfa; --critic:#fb7185; --narrative:#2dd4bf; --reviewer:#4ade80; --reporter:#60a5fa; --manager:#94a3b8;
+    --ok:#4ade80; --warn:#fbbf24; --bad:#f87171; --blue:#60a5fa;
+    --node:#1b272e; --node-line:#38474f;
+  }
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--ink);font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;display:flex;flex-direction:column}
+header{display:flex;align-items:center;gap:12px;padding:10px 16px;background:var(--panel);border-bottom:1px solid var(--line);flex-wrap:wrap}
+header h1{font-size:16px;margin:0;font-weight:650}
+header .sub{color:var(--muted);font-size:12px}
+.pill{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:3px 10px;font-size:12px;font-weight:600;background:var(--sys);color:var(--muted)}
+.pill .dot{width:8px;height:8px;border-radius:50%;background:currentColor}
+.pill.running{color:var(--ok)} .pill.running .dot{animation:pulse 1s infinite}
+.pill.done{color:var(--blue)} .pill.failed{color:var(--bad)} .pill.offline{color:var(--bad)}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.35;transform:scale(1.5)}}
+header .grow{flex:1}
+button{font:inherit;color:var(--ink);background:var(--sys);border:1px solid var(--line);border-radius:8px;padding:4px 10px;cursor:pointer}
+button:hover{border-color:var(--muted)}
+main{flex:1;min-height:0;display:grid;grid-template-columns:minmax(360px,5fr) minmax(360px,6fr);gap:14px;padding:14px}
+@media (max-width:900px){main{grid-template-columns:1fr;overflow:auto}}
+.left{display:flex;flex-direction:column;gap:12px;min-height:0;overflow:auto;padding-right:2px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 14px}
+.card h2{font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:0 0 8px;font-weight:650}
+svg{width:100%;height:auto;display:block}
+svg text{font-family:inherit;fill:var(--ink)}
+.node rect,.node circle.body{fill:var(--node);stroke:var(--node-line);stroke-width:2;transition:all .25s}
+.node .name{font-size:13px;font-weight:650;text-anchor:middle}
+.node .role{font-size:10.5px;text-anchor:middle;fill:var(--muted)}
+.node .badge{font-size:10.5px;text-anchor:middle;fill:var(--muted)}
+.node .emoji{font-size:24px;text-anchor:middle}
+.node.active circle.body{stroke:var(--c);stroke-width:4;fill:color-mix(in srgb,var(--c) 14%,var(--node));filter:drop-shadow(0 0 8px var(--c))}
+.node .ring{fill:none;stroke:var(--c);stroke-width:3;stroke-dasharray:10 8;opacity:0}
+.node.active .ring{opacity:1;animation:spin 2.4s linear infinite;transform-box:fill-box;transform-origin:center}
+@keyframes spin{to{transform:rotate(360deg)}}
+.node .think{font-size:11px;text-anchor:middle;fill:var(--c);font-weight:650;opacity:0}
+.node.active .think{opacity:1}
+.node.hit rect{stroke:var(--manager);stroke-width:3}
+.edge{fill:none;stroke:var(--node-line);stroke-width:2.2}
+.edge.link{stroke-dasharray:3 5;stroke-width:1.5;opacity:.7}
+.edge.loop{stroke:var(--warn);stroke-dasharray:6 5}
+.edge.flash{stroke:var(--blue);opacity:1;stroke-width:2.4}
+.elabel{font-size:10.5px;fill:var(--muted);text-anchor:middle}
+.env{fill:var(--blue)}
+#now{margin-top:8px;padding:10px 12px;border-radius:10px;background:var(--sys);min-height:64px}
+#now b{display:block;margin-bottom:2px}
+#now small{color:var(--muted)}
+#timeline{max-height:210px;overflow:auto;font-size:12.5px}
+#timeline div{padding:3px 0;border-bottom:1px dashed var(--line);display:flex;gap:8px}
+#timeline time{color:var(--muted);font-variant-numeric:tabular-nums;flex:none}
+#raw{max-height:200px;overflow:auto;font:11.5px/1.4 ui-monospace,Consolas,monospace}
+#raw div{padding:2px 0;border-bottom:1px dashed var(--line);word-break:break-word}
+#raw .t{color:var(--blue)} #raw .s{color:var(--coding)}
+details summary{cursor:pointer;font-weight:600;padding:3px 0}
+details p{margin:2px 0 8px;color:var(--muted)}
+.chat{display:flex;flex-direction:column;min-height:0;border-radius:14px;overflow:hidden;border:1px solid var(--line);background:var(--wall)}
+.chat-head{background:var(--head);color:var(--head-ink);padding:10px 14px;display:flex;gap:12px;align-items:center}
+.stack{display:flex}
+.stack .av{margin-left:-8px;border:2px solid var(--head)} .stack .av:first-child{margin-left:0}
+.chat-head .t{font-weight:650;font-size:15px} .chat-head .s{font-size:12px;opacity:.85;min-height:17px}
+.av{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;font-size:18px;background:var(--c);color:#fff;flex:none}
+#messages{flex:1;overflow:auto;padding:14px 14px 8px;background-image:radial-gradient(var(--wall-dot) 1.2px,transparent 1.4px);background-size:22px 22px;display:flex;flex-direction:column;gap:6px}
+.row{display:flex;gap:8px;align-items:flex-end;max-width:92%}
+.row.in{align-self:flex-start} .row.out{align-self:flex-end;flex-direction:row-reverse}
+.bub{border-radius:10px;padding:6px 10px 4px;box-shadow:0 1px 1px rgba(0,0,0,.14);max-width:100%;min-width:90px}
+.in .bub{background:var(--in);border-top-left-radius:2px} .out .bub{background:var(--out);border-top-right-radius:2px}
+.who{font-size:12.5px;font-weight:700;color:var(--c)}
+.txt{white-space:pre-wrap;word-break:break-word}
+.meta{display:flex;justify-content:flex-end;gap:6px;font-size:10.5px;color:var(--muted);margin-top:2px}
+.meta .tick{color:var(--blue)}
+.chip{align-self:center;background:var(--chip);color:var(--chip-ink);font-size:12px;border-radius:8px;padding:4px 10px;text-align:center;max-width:90%;box-shadow:0 1px 1px rgba(0,0,0,.1)}
+.chip.sys{background:var(--sys);color:var(--muted)} .chip.err{background:var(--bad);color:#fff}
+.chip.date{font-weight:650}
+.chips{display:flex;flex-wrap:wrap;gap:4px;margin:4px 0}
+.k{background:var(--sys);border-radius:6px;padding:1px 7px;font-size:12px}
+.k b{color:var(--muted);font-weight:600;margin-right:4px}
+.k.re{background:color-mix(in srgb,var(--critic) 14%,var(--sys))}
+.crow{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin:3px 0;font-size:13px}
+.arrow{color:var(--muted)}
+.m{font-size:10px;border-radius:5px;padding:0 5px;background:var(--sys);color:var(--muted)}
+.m.model{color:var(--coding)} .m.exact{color:var(--ok)} .m.none{color:var(--bad)} .m.string{color:var(--warn)}
+.term{font-weight:650} .term.none{color:var(--bad)}
+.vd{display:inline-block;border-radius:6px;padding:1px 8px;font-weight:700;font-size:12px;color:#fff;margin:2px 0}
+.vd.APPROVE{background:var(--ok)} .vd.REVISE{background:var(--warn)} .vd.ESCALATE{background:var(--bad)}
+.tri{display:inline-block;border-radius:6px;padding:1px 8px;font-weight:700;font-size:12px;color:#fff;margin-top:4px}
+.tri.URGENT{background:var(--bad)} .tri.HIGH{background:var(--warn)} .tri.ROUTINE{background:var(--ok)} .tri.REVIEW{background:var(--manager)}
+.raw-toggle{font-size:10.5px;color:var(--muted);cursor:pointer;text-decoration:underline dotted}
+.rawtxt{display:none;margin-top:4px;padding:4px 6px;border-radius:6px;background:var(--sys);font:11px/1.35 ui-monospace,Consolas,monospace;white-space:pre-wrap;color:var(--muted)}
+.typing .dots span{display:inline-block;width:6px;height:6px;margin:0 1.5px;border-radius:50%;background:var(--muted);animation:bounce 1.1s infinite}
+.typing .dots span:nth-child(2){animation-delay:.15s}.typing .dots span:nth-child(3){animation-delay:.3s}
+@keyframes bounce{0%,60%,100%{transform:translateY(0);opacity:.5}30%{transform:translateY(-4px);opacity:1}}
+.chat-foot{padding:8px 12px;background:var(--panel);border-top:1px solid var(--line);color:var(--muted);font-size:12px;display:flex;gap:8px;align-items:center}
+.chat-foot .fake{flex:1;border-radius:18px;background:var(--sys);padding:6px 12px}
+#jump{position:absolute;right:26px;bottom:76px;display:none;border-radius:999px}
+.chatwrap{position:relative;display:flex;flex-direction:column;min-height:0}
+.empty{margin:auto;text-align:center;color:var(--muted);max-width:300px}
+</style>
+</head>
+<body>
+<header>
+  <h1>🛰️ Crew Monitor</h1><span class="sub">AutoGen agents, live</span>
+  <span id="status" class="pill"><span class="dot"></span><span id="statustext">connecting…</span></span>
+  <span class="sub" id="timer"></span><span class="sub" id="model"></span>
+  <span class="grow"></span>
+  <button id="clear" title="Hide everything shown so far">Clear view</button>
+</header>
+<main>
+  <section class="left">
+    <div class="card">
+      <h2>How AutoGen is running this</h2>
+      <svg id="diagram" viewBox="0 0 600 520" role="img" aria-label="AutoGen workflow diagram"></svg>
+      <div id="now"><b>Waiting for a report</b><small>Run the crew from the Streamlit page and watch this diagram light up.</small></div>
+    </div>
+    <div class="card"><h2>What AutoGen did, step by step</h2><div id="timeline"></div></div>
+    <div class="card">
+      <h2>AutoGen in 60 seconds</h2>
+      <details open><summary>Agent</summary><p>A Python object with a name. AutoGen hands it the new messages (<code>on_messages</code>) and it returns one reply. Here each agent calls the language model inside that method.</p></details>
+      <details><summary>Team (group chat)</summary><p>Several agents sharing one conversation. This crew uses <b>GraphFlow</b>: agents are nodes and arrows say who speaks next. The Critic's arrow back to Intake only fires when it says <code>VERDICT: REVISE</code>.</p></details>
+      <details><summary>Everyone sees everything</summary><p>Every reply is delivered to every participant. Each agent keeps its own memory of what it was shown, so the Critic can read what Intake and Coding said.</p></details>
+      <details><summary>Who decides who speaks?</summary><p>The manager, using the graph. No model is asked to choose, so the routing is predictable.</p></details>
+      <details><summary>When does it stop?</summary><p>When the last agent has no arrow out (Narrative), or a turn limit is reached as a safety stop. The case then waits for the human reviewer.</p></details>
+    </div>
+    <div class="card"><h2>Raw AutoGen stream</h2><div id="raw"><div style="color:var(--muted)">Objects AutoGen yields from <code>run_stream()</code> appear here.</div></div></div>
+  </section>
+  <section class="chatwrap">
+    <div class="chat" style="flex:1;min-height:0">
+      <div class="chat-head">
+        <div class="stack" id="stack"></div>
+        <div><div class="t">PV Triage Crew</div><div class="s" id="sub">Intake, Coding, Critic, Narrative, You</div></div>
+      </div>
+      <div id="messages"><div class="empty" id="empty">🗨️<br><b>No conversation yet</b><br>When a report is run, the agents' messages appear here, like a group chat.</div></div>
+      <div class="chat-foot"><div class="fake">Agents talk here. Your decision comes from the Streamlit page.</div></div>
+    </div>
+    <button id="jump">↓ new messages</button>
+  </section>
+</main>
+<script>
+"use strict";
+const AGENTS = {
+  Intake:{emoji:"📋",role:"extracts the fields",c:"--intake"},
+  Coding:{emoji:"🏷️",role:"standard terms",c:"--coding"},
+  Critic:{emoji:"🔍",role:"checks vs report",c:"--critic"},
+  Narrative:{emoji:"✍️",role:"narrative + triage",c:"--narrative"},
+};
+const OTHERS = {Reporter:{emoji:"📨",c:"--reporter"}, Reviewer:{emoji:"🧑‍⚕️",c:"--reviewer"}, Manager:{emoji:"⚙️",c:"--manager"}};
+const $ = id => document.getElementById(id);
+const NS = "http://www.w3.org/2000/svg";
+function el(tag, attrs, text, ns){
+  const e = ns ? document.createElementNS(NS, tag) : document.createElement(tag);
+  for (const [k,v] of Object.entries(attrs||{})) e.setAttribute(k, v);
+  if (text !== undefined) e.textContent = text;
+  return e;
+}
+const cvar = name => `var(${(AGENTS[name]||OTHERS[name]||OTHERS.Manager).c})`;
+
+/* ---------- diagram ---------- */
+const POS = {Intake:[85,290], Coding:[235,290], Critic:[385,290], Narrative:[535,290]};
+const nodes = {}, edges = {}, calls = {};
+(function buildDiagram(){
+  const svg = $("diagram");
+  const defs = el("defs",{},undefined,1);
+  const mk = (id,color)=>{const m=el("marker",{id,viewBox:"0 0 10 10",refX:"8",refY:"5",markerWidth:"7",markerHeight:"7",orient:"auto-start-reverse"},undefined,1);
+    m.appendChild(el("path",{d:"M0 0L10 5L0 10z",fill:color},undefined,1)); return m;};
+  defs.appendChild(mk("ah","var(--muted)")); defs.appendChild(mk("ahw","var(--warn)"));
+  svg.appendChild(defs);
+  const edge = (key,d,cls,marker)=>{const p=el("path",{d,class:"edge "+cls,id:"e-"+key},undefined,1); if(marker)p.setAttribute("marker-end",`url(#${marker})`); svg.appendChild(p); edges[key]=p;};
+  // reporter + manager
+  const rep = el("g",{class:"node"},undefined,1);
+  rep.appendChild(el("rect",{x:225,y:14,width:150,height:40,rx:10},undefined,1));
+  rep.appendChild(el("text",{x:300,y:39,class:"name"},"📨 Report (the task)",1));
+  svg.appendChild(rep);
+  edge("task","M300 54 L300 98","", "ah");
+  svg.appendChild(el("text",{x:322,y:82,class:"elabel"},"task",1));
+  const man = el("g",{class:"node",id:"n-Manager"},undefined,1);
+  man.appendChild(el("rect",{x:110,y:100,width:380,height:62,rx:14},undefined,1));
+  man.appendChild(el("text",{x:300,y:127,class:"name"},"⚙️ GraphFlow manager",1));
+  man.appendChild(el("text",{x:300,y:146,class:"role"},"decides who speaks next · delivers every message to everyone",1));
+  svg.appendChild(man); nodes.Manager = man;
+  for (const [n,[x,y]] of Object.entries(POS)) edge("link-"+n,`M${x} 162 L${x} ${y-40}`,"link","");
+  // flow edges
+  edge("Intake-Coding",`M121 290 L199 290`,"", "ah");
+  edge("Coding-Critic",`M271 290 L349 290`,"", "ah");
+  edge("Critic-Narrative",`M421 290 L499 290`,"", "ah");
+  edge("Critic-Intake","M385 252 C385 196, 85 196, 85 252","loop","ahw");
+  svg.appendChild(el("text",{x:235,y:206,class:"elabel"},"only if the Critic says REVISE",1));
+  edge("Narrative-Reviewer","M535 420 L535 456","link","ah");
+  svg.appendChild(el("text",{x:523,y:442,class:"elabel",style:"text-anchor:end"},"the case waits for you",1));
+  // agent nodes
+  for (const [n,[x,y]] of Object.entries(POS)){
+    const g = el("g",{class:"node",id:"n-"+n},undefined,1);
+    g.style.setProperty("--c",`var(${AGENTS[n].c})`);
+    g.appendChild(el("circle",{class:"ring",cx:x,cy:y,r:46},undefined,1));
+    g.appendChild(el("circle",{class:"body",cx:x,cy:y,r:36},undefined,1));
+    g.appendChild(el("text",{x:x,y:y+9,class:"emoji"},AGENTS[n].emoji,1));
+    g.appendChild(el("text",{x:x,y:y+62,class:"name"},n,1));
+    g.appendChild(el("text",{x:x,y:y+77,class:"role"},AGENTS[n].role,1));
+    const b = el("text",{x:x,y:y+92,class:"badge"},"not called yet",1); g.appendChild(b); calls[n]=b;
+    g.appendChild(el("text",{x:x,y:y+108,class:"think"},"working…",1));
+    svg.appendChild(g); nodes[n]=g;
+  }
+  const rv = el("g",{class:"node",id:"n-Reviewer"},undefined,1);
+  rv.style.setProperty("--c","var(--reviewer)");
+  rv.appendChild(el("rect",{x:455,y:458,width:140,height:44,rx:10},undefined,1));
+  rv.appendChild(el("text",{x:525,y:485,class:"name"},"🧑‍⚕️ You (Streamlit)",1));
+  svg.appendChild(rv); nodes.Reviewer = rv;
+})();
+function setActive(name){ for (const n of Object.keys(AGENTS)) nodes[n].classList.toggle("active", n===name); }
+function pulse(node){ node.classList.add("hit"); setTimeout(()=>node.classList.remove("hit"),900); }
+function flashLinks(){ for (const n of Object.keys(AGENTS)){ const e=edges["link-"+n]; e.classList.add("flash"); setTimeout(()=>e.classList.remove("flash"),900);} }
+function travel(pathKey, ms){
+  const path = edges[pathKey]; if(!path) return;
+  const len = path.getTotalLength(); const dot = el("circle",{r:7,class:"env"},undefined,1);
+  const label = el("text",{class:"emoji",style:"font-size:12px;text-anchor:middle"},"✉",1);
+  $("diagram").appendChild(dot); $("diagram").appendChild(label);
+  path.classList.add("flash"); const t0 = performance.now();
+  (function step(now){ const f=Math.min(1,(now-t0)/ms); const p=path.getPointAtLength(len*f);
+    dot.setAttribute("cx",p.x); dot.setAttribute("cy",p.y); label.setAttribute("x",p.x); label.setAttribute("y",p.y+4);
+    if(f<1) requestAnimationFrame(step); else { dot.remove(); label.remove(); path.classList.remove("flash"); } })(t0);
+}
+let callCount = {};
+function resetDiagram(){ callCount={}; for (const n of Object.keys(AGENTS)) calls[n].textContent="not called yet"; setActive(null); }
+
+/* ---------- caption + timeline ---------- */
+function now(title, body){ const d=$("now"); d.replaceChildren(el("b",{},title)); if(body) d.appendChild(el("small",{},body)); }
+function tl(clock, icon, text){
+  const t=$("timeline"); const near = t.scrollTop+t.clientHeight >= t.scrollHeight-30;
+  const row=el("div"); row.appendChild(el("time",{},clock)); row.appendChild(el("span",{},icon+" "+text)); t.appendChild(row);
+  while(t.children.length>150) t.removeChild(t.firstChild);
+  if(near) t.scrollTop=t.scrollHeight;
+}
+function rawline(e){
+  const r=$("raw"); if(r.firstChild && !r.firstChild.dataset.row) r.replaceChildren();
+  const row=el("div"); row.dataset.row=1;
+  row.appendChild(el("span",{class:"t"},e.type)); row.appendChild(document.createTextNode(` (source="${e.source}") `));
+  row.appendChild(el("span",{class:"s"},`“${e.preview}”`)); r.appendChild(row);
+  while(r.children.length>80) r.removeChild(r.firstChild); r.scrollTop=r.scrollHeight;
+}
+
+/* ---------- chat ---------- */
+const msgs = $("messages"); let typingRow = null, stickBottom = true;
+msgs.addEventListener("scroll",()=>{ stickBottom = msgs.scrollTop+msgs.clientHeight >= msgs.scrollHeight-40; if(stickBottom)$("jump").style.display="none"; });
+$("jump").onclick=()=>{ msgs.scrollTop=msgs.scrollHeight; };
+function addRow(node){
+  $("empty") && $("empty").remove();
+  msgs.appendChild(node);
+  if(stickBottom) msgs.scrollTop=msgs.scrollHeight; else $("jump").style.display="block";
+}
+function chipRow(text, cls){ addRow(el("div",{class:"chip "+(cls||"")},text)); }
+function avatar(name){ const a=el("div",{class:"av"},(AGENTS[name]||OTHERS[name]||OTHERS.Manager).emoji); a.style.setProperty("--c",cvar(name)); return a; }
+function bubble(name, side, e, opts){
+  opts = opts||{};
+  const row=el("div",{class:"row "+side}); if(side==="in") row.appendChild(avatar(name));
+  const b=el("div",{class:"bub"});
+  const who=el("div",{class:"who"},opts.label||name); who.style.setProperty("--c",cvar(name)); b.appendChild(who);
+  if(opts.pre) opts.pre.forEach(n=>b.appendChild(n));
+  if(opts.text){ b.appendChild(el("div",{class:"txt"},opts.text)); }
+  if(opts.post) opts.post.forEach(n=>b.appendChild(n));
+  if(e && opts.rawText){
+    const tgl=el("span",{class:"raw-toggle"},"message text as AutoGen delivers it"); const raw=el("div",{class:"rawtxt"},opts.rawText);
+    tgl.onclick=()=>{raw.style.display=raw.style.display==="block"?"none":"block"}; b.appendChild(tgl); b.appendChild(raw);
+  }
+  const meta=el("div",{class:"meta"}); meta.appendChild(el("span",{},e?e.clock:""));
+  if(opts.ticks){ meta.appendChild(el("span",{class:"tick",title:"delivered to every participant"},"✓✓")); }
+  b.appendChild(meta); row.appendChild(b); return row;
+}
+function clearTyping(){ if(typingRow){ typingRow.remove(); typingRow=null; } $("sub").textContent="Intake, Coding, Critic, Narrative, You"; }
+function showTyping(name){
+  clearTyping();
+  const row=el("div",{class:"row in typing"}); row.appendChild(avatar(name));
+  const b=el("div",{class:"bub"}); const who=el("div",{class:"who"},name); who.style.setProperty("--c",cvar(name)); b.appendChild(who);
+  const d=el("div",{class:"dots"}); d.appendChild(el("span")); d.appendChild(el("span")); d.appendChild(el("span")); b.appendChild(d);
+  row.appendChild(b); typingRow=row; addRow(row); $("sub").textContent=name+" is typing…";
+}
+function kv(k,v,cls){ const s=el("span",{class:"k "+(cls||"")}); s.appendChild(el("b",{},k)); s.appendChild(document.createTextNode(v)); return s; }
+function caseCard(f){
+  const w=el("div",{class:"chips"});
+  w.appendChild(kv("age", f.patient_age==null?"not stated":String(f.patient_age)));
+  w.appendChild(kv("sex", f.patient_sex)); w.appendChild(kv("drug", f.suspect_drug));
+  w.appendChild(kv("serious", f.serious?"yes":"no")); w.appendChild(kv("outcome", String(f.outcome).replace(/_/g," ")));
+  (f.reactions||[]).forEach(r=>w.appendChild(kv("reaction", r, "re")));
+  return w;
+}
+function codingCard(rows){
+  const w=el("div");
+  rows.forEach(r=>{ const c=el("div",{class:"crow"}); c.appendChild(el("span",{},r.reported)); c.appendChild(el("span",{class:"arrow"},"→"));
+    c.appendChild(el("span",{class:"term"+(r.term?"":" none")}, r.term||"no standard term")); c.appendChild(el("span",{class:"m "+(r.term?r.method:"none")}, r.term?r.method:"uncoded")); w.appendChild(c); });
+  return w;
+}
+function handleMessage(e){
+  clearTyping();
+  const name=e.agent, card=e.card||{}, firstLine=(e.text||"").split("\n")[0];
+  let opts={ticks:true, rawText:e.text};
+  if(card.type==="case"){ opts.text=firstLine; opts.post=[caseCard(card.fields)]; }
+  else if(card.type==="coding"){ opts.text=firstLine; opts.post=[codingCard(card.rows)]; }
+  else if(card.type==="verdict"){ const v=el("span",{class:"vd "+card.verdict},"VERDICT: "+card.verdict); opts.pre=[v]; opts.text=(e.text||"").split("\n").slice(1).join("\n"); }
+  else if(card.type==="narrative"){ const t=card.triage||{}; opts.text=card.text||firstLine; const b=el("div"); b.appendChild(el("span",{class:"tri "+(t.priority||"REVIEW")},"TRIAGE: "+(t.priority||"")));
+    b.appendChild(el("div",{class:"txt"},(t.why||"")+((t.follow_up&&t.follow_up.length)?" Follow-up: "+t.follow_up.join(", ")+".":""))); opts.post=[b]; }
+  else { opts.text=e.text; }
+  addRow(bubble(name,"in",e,opts));
+}
+
+/* ---------- event handling ---------- */
+let minId = 0, startedAt = null, runState = "idle";
+function setStatus(kind, text){ const s=$("status"); s.className="pill "+kind; $("statustext").textContent=text; runState=kind; }
+setInterval(()=>{ if(startedAt && runState==="running") $("timer").textContent=((Date.now()-startedAt)/1000).toFixed(0)+"s"; },500);
+const DELAY = {manager:650, called:450, typing:250, llm:200, message:500, autogen:80, system:300, run_start:500, run_end:500, review:400, error:300};
+function handle(e){
+  switch(e.kind){
+  case "run_start":
+    resetDiagram(); startedAt=Date.now(); setStatus("running","running");
+    chipRow(`Run ${e.run} · report ${e.report_id||"(pasted)"}`,"date");
+    addRow(bubble("Reporter","out",e,{label:"Report (task)",text:e.report,ticks:true}));
+    now("A report arrived","AutoGen starts a new task and gives the text to the first agent.");
+    tl(e.clock,"📨","Report entered the crew."); flashLinks(); break;
+  case "system":
+    chipRow("ℹ️ "+e.text,"sys"); tl(e.clock,"ℹ️",e.text);
+    if(/^model:/.test(e.text)) $("model").textContent="· "+e.text; break;
+  case "manager":
+    chipRow("⚙️ "+e.text); tl(e.clock,"⚙️",e.text+(e.reason?" ("+e.reason+")":""));
+    now(e.text, e.reason); pulse(nodes.Manager);
+    break;
+  case "called": {
+    callCount[e.agent]=(callCount[e.agent]||0)+1; calls[e.agent].textContent=`called ${callCount[e.agent]}× · memory ${e.total}`;
+    setActive(e.agent);
+    const n=e.received.length;
+    now(`AutoGen calls ${e.agent}.on_messages()`, `It hands over ${n} new message${n===1?"":"s"} (${e.received.map(r=>r.source).join(", ")}). ${e.agent} now remembers ${e.total} in total.`);
+    tl(e.clock,"📬",`${e.agent} gets ${n} new message${n===1?"":"s"} from ${e.received.map(r=>r.source).join(", ")}`);
+    break; }
+  case "typing": showTyping(e.agent); break;
+  case "llm": if(e.model) $("model").textContent="· model: "+e.model; tl(e.clock,"🤖",`${e.agent} asked ${e.model||"the model"}: ${e.purpose} (${(e.ms/1000).toFixed(1)}s)`);
+    now(`${e.agent} finished a model call`, `${e.purpose} · ${(e.ms/1000).toFixed(1)}s`); break;
+  case "message": handleMessage(e); tl(e.clock,"💬",`${e.agent} replied`);
+    now(`${e.agent} replied`, "AutoGen adds the reply to the shared conversation and delivers it to every participant."); flashLinks();
+    break;
+  case "autogen": rawline(e); break;
+  case "run_end":
+    clearTyping(); setActive(null); setStatus(e.status==="failed"?"failed":"done", e.status==="failed"?"failed":"done");
+    $("timer").textContent=(e.seconds||0).toFixed(1)+"s";
+    chipRow(e.status==="failed"?"⚠️ The run failed: "+(e.error||""):"✅ Workflow complete · waiting for the reviewer","sys");
+    now(e.status==="failed"?"The run failed":"No arrow left to follow, so the workflow is complete", e.status==="failed"?e.error:(e.stop_reason||"The case now waits for you in the Streamlit page."));
+    tl(e.clock,e.status==="failed"?"⚠️":"🏁",e.status==="failed"?"Run failed":"Workflow complete ("+(e.seconds||0).toFixed(1)+"s)"); pulse(nodes.Reviewer); break;
+  case "review": {
+    const r=el("div"); const side="out";
+    addRow(bubble("Reviewer",side,e,{label:"You (reviewer)",text:e.text,ticks:true}));
+    now("Reviewer decision: "+e.decision.replace(/_/g," "), e.text); tl(e.clock,"🧑‍⚕️","Reviewer: "+e.decision.replace(/_/g," ")); pulse(nodes.Reviewer); break; }
+  case "error":
+    clearTyping(); setActive(null); chipRow("⚠️ "+(e.agent||"")+": "+e.error,"err"); tl(e.clock,"⚠️",(e.agent||"")+": "+e.error); break;
+  }
+}
+/* animate the hand-over arrow when the manager routes */
+const origHandle = handle;
+function handleWithTravel(e){
+  if(e.kind==="manager" && e.next && /^Manager:/.test(e.text)){
+    const from = e.text.match(/Manager: (\w+) spoke/);
+    if(from){ const key = from[1]+"-"+e.next; const k2 = edges[key]?key:(from[1]==="Critic"&&e.next==="Intake"?"Critic-Intake":null); if(k2) travel(k2, 600); }
+  }
+  origHandle(e);
+}
+
+/* ---------- queue + polling ---------- */
+const queue=[]; let pumping=false;
+function pump(){
+  if(pumping) return; pumping=true;
+  (function next(){
+    const e=queue.shift(); if(!e){ pumping=false; return; }
+    if(e.id>minId) { try{ handleWithTravel(e); }catch(err){ console.error(err, e); } }
+    const fast = queue.length>25; setTimeout(next, fast?0:(DELAY[e.kind]||200));
+  })();
+}
+let last=0, epoch=null;
+function resetAll(){ queue.length=0; msgs.replaceChildren(); $("timeline").replaceChildren(); $("raw").replaceChildren(); typingRow=null; resetDiagram(); }
+async function poll(){
+  try{
+    const r=await fetch(`/api/events?since=${last}`,{cache:"no-store"}); const d=await r.json();
+    if(epoch && d.epoch!==epoch){ epoch=d.epoch; last=0; resetAll(); setTimeout(poll,100); return; }
+    epoch=d.epoch;
+    for(const e of d.events){ queue.push(e); last=e.id; }
+    if(d.events.length) pump();
+    if(runState==="offline") setStatus(d.running?"running":"idle", d.running?"running":"idle");
+    if(!d.running && runState==="connecting") setStatus("idle","idle");
+  }catch(err){ setStatus("offline","server not reachable"); }
+  setTimeout(poll,600);
+}
+$("clear").onclick=()=>{ minId=last; resetAll(); $("empty") || msgs.appendChild(el("div",{class:"empty",id:"empty"},"View cleared.")); };
+(function init(){ const s=$("stack"); for(const n of Object.keys(AGENTS)) s.appendChild(avatar(n)); s.appendChild(avatar("Reviewer")); setStatus("connecting","connecting…"); poll(); })();
+</script>
+</body>
+</html>

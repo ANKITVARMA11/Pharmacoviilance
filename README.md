@@ -17,7 +17,7 @@ macOS/Linux: `python3 -m venv venv && source venv/bin/activate && pip install -r
 3. NVIDIA asks you to verify a phone number by SMS the first time. Enter it and the code.
 4. Click **Generate Key**, then **Copy**. The key starts with `nvapi-`. If you lose it, generate a new one from the same page.
 
-**2. Put the key in `.env`.** Open the `.env` file in this folder in Notepad or VS Code and paste it after
+**2. Put the key in `.env`.** (No `.env` in the folder? Copy `.env.example` to `.env`.) Open it in Notepad or VS Code and paste the key after
 `NVIDIA_API_KEY=` (no quotes, no spaces, no extra line). Save the file.
 
 **3. Check everything works** (about 2 API calls):
@@ -116,6 +116,58 @@ long it took); the raw objects `run_stream()` yields; and your own decision when
 loop back to Intake, the stop condition. The model calls themselves go through this project's own client, which already
 handles pacing, retries and switching models, so AutoGen's built-in model client is not used.
 
+## Comparing models (accuracy)
+Runs several NVIDIA models over the same reports and scores each against the FAERS answers the reports were written from.
+For every report it checks six things: age, sex, suspect drug, serious, outcome, and the set of reactions after coding.
+You get the share of checks that were right, the share of reports that were right in every way, a 95% interval for both
+(so you can see whether two models are really different or the sample is just small), and a per-field table.
+
+```powershell
+# 1. A fresh set of reports, from a different part of FAERS than the ones used while building and tuning (--skip)
+python -m pvcrew.pipeline --data-dir data_eval fetch --n 60 --skip 2000
+python -m pvcrew.pipeline --data-dir data_eval synth          # ~60 calls. Or add --offline: 0 calls, but easier template reports
+
+# 2. A 5-report trial. --auto picks 3 working models from different publishers and prints their ids
+python -m pvcrew.compare --data-dir data_eval --auto 3 --limit 5
+#    (or name the models yourself with --models id1,id2,id3 ; list the ones on your key with: python -m pvcrew.llm instruct)
+
+# 3. The real run: name the models it printed, so no credits are spent finding them again. Finished reports are kept, only new ones cost
+python -m pvcrew.compare --data-dir data_eval --models id1,id2,id3 --limit 50
+
+streamlit run app.py          # the "Model comparison" tab shows the same table and a chart
+```
+- **Credits.** About 3 calls per report per model (one to read the report, up to two to code the reactions). 3 models x 50 reports is
+  roughly 450 calls of your ~1,000 monthly free credits, plus ~60 if an LLM writes the reports and ~20 for `--auto` to find working models.
+  The 5-report trial costs about 45 calls and shows which models work on your key before you spend the rest.
+- **Stopping is safe.** Every answer is saved as it arrives. If a model fails (retired, rate limited), the others carry on, the table marks it
+  `(incomplete)`, and running the same command again continues it. `--fresh` throws earlier results away and starts over; use it after you change
+  the reports or the prompts.
+- **Fair by construction.** Every model gets the same reports and is pinned: it is never swapped for another one halfway. A report a model could not
+  answer counts as wrong, so a model that often returns broken JSON loses points for it.
+- **If `--auto` finds nothing:** NVIDIA's model list still shows many retired models, and it only tries `NIM_MAX_MODEL_TRIES` (default 10) of them. Raise it for that
+  PowerShell window with `$env:NIM_MAX_MODEL_TRIES = 40`. **Very large models can be too slow** for 50 reports (a model that times out is marked incomplete):
+  give it longer with `$env:NIM_TIMEOUT = 240`, or leave it out of `--models`.
+- **Needs the reaction vocabulary** from `python -m pvcrew.pipeline terms` (already there if you did the coding step). If you set `PV_MODEL` in `.env`,
+  `--auto` refuses to run, because that pins one model.
+- Results are in `data_eval/compare/`: `compare.md`, `compare.json`, and a folder per model. To see one model's mistakes:
+  `python -m pvcrew.score data_eval\compare\<model folder>\coded.jsonl --show 20`.
+
+Read the numbers with these limits in mind (they are also printed under the table):
+- The reports are synthetic and written from the answers, so scores are optimistic for real reporters' wording. No hand-labelled reports exist yet.
+- A model that also wrote the reports (`synth` without `--offline` picks one automatically) may read its own writing better. Use `synth --model` with a model you are not comparing, or `--offline`.
+- The extraction prompt was developed while testing with one model, which may favour that model.
+- With 50 reports the "whole report correct" interval is about plus or minus 13 points. A gap smaller than the interval is not evidence that one model is better; the "Versus the top model" column says when a gap is clear.
+
+## Ideas for later (not built)
+- **Hand-labelled reports.** Have a pharmacovigilance reviewer label 50 to 100 real (anonymised) reports. This is the biggest step up in trust, because the synthetic truth cannot show how models cope with real wording.
+- **Reviewer edits as a free accuracy signal.** `data/reviews.jsonl` already stores what the model proposed and what the human changed. The share of approved-without-edits cases, and which fields get edited, measures real accuracy as the crew is used.
+- **Safety-weighted scoring.** Missing a serious or fatal case is worse than getting an age wrong. A score that weights fields by consequence, or a separate recall figure for serious cases, would match how the work is judged.
+- **Breakdown by report style.** `pairs.jsonl` records the writing style of each report; scoring per style shows which wording breaks which model.
+- **Does the Critic work?** Plant known errors in cases and measure how many the Critic sends back. Today it is not measured.
+- **Triage accuracy** against an expert's priorities, once an expert has labelled some cases.
+- **Several report-writing models**, so no compared model is graded on its own writing.
+- **Repeat runs and bigger samples** to see how stable a ranking is, and speed and cost per report next to accuracy.
+
 ## The .env file
 `pvcrew/config.py` is the only code that reads settings; every other module goes through it, so one file controls everything.
 A real environment variable with the same name wins over `.env` (handy for one-off runs).
@@ -175,8 +227,9 @@ production needs an NVIDIA AI Enterprise licence, or a self-hosted NIM (same cod
 | `pvcrew/llm.py` | NIM client: pacing, 429/5xx retry, guided JSON, model discovery + auto-pick; `python -m pvcrew.llm` lists models |
 | `pvcrew/coding.py` | reaction vocabulary + the coding step |
 | `pvcrew/score.py` | `python -m pvcrew.score` accuracy report |
-| `pvcrew/pipeline.py` | CLI: fetch, synth, extract (resumable), all |
-| `app.py` | Day 3: the Streamlit reviewer page (`streamlit run app.py`) |
+| `pvcrew/pipeline.py` | CLI: fetch (`--skip` for a different slice), synth, extract (resumable), all |
+| `pvcrew/compare.py` | `python -m pvcrew.compare` runs several models on the same reports and scores them side by side |
+| `app.py` | Day 3: the Streamlit reviewer page (`streamlit run app.py`), plus the Model comparison tab |
 | `pvcrew/crew/agents.py` | the four agents (Intake, Coding, Critic, Narrative) |
 | `pvcrew/crew/team.py` | the AutoGen `GraphFlow`, the routing rules, `run_crew` |
 | `pvcrew/crew/triage.py` | demo triage rules (not regulatory advice) |
@@ -184,7 +237,7 @@ production needs an NVIDIA AI Enterprise licence, or a self-hosted NIM (same cod
 | `pvcrew/crew/monitor.py`, `monitor.html` | the live monitor window (a small local web server and its page) |
 | `pvcrew/crew/service.py` | what the page calls: run the crew, save the reviewer's decision, read samples and logs |
 | `data/sample_faers.jsonl` | 6 hand-written records in FAERS format for offline use (not real reports) |
-| `tests/` | About 400 tests. `fake_nim.py` is a local stand-in for NVIDIA's API; `test_e2e_cli.py` runs the real commands off a `.env` file. The Day 3 tests use a scripted fake model; `test_app.py` drives the page headlessly; `test_monitor_browser.py` draws the monitor in a real browser and is skipped unless `playwright` and Chromium are installed |
+| `tests/` | About 450 tests. `fake_nim.py` is a local stand-in for NVIDIA's API; `test_e2e_cli.py` runs the real commands off a `.env` file. The Day 3 tests use a scripted fake model; `test_app.py` drives the page headlessly; `test_monitor_browser.py` draws the monitor in a real browser and is skipped unless `playwright` and Chromium are installed |
 
 ## Things to know
 - FAERS reactions are coded terms ("Dyspnoea"); the model may write lay wording ("trouble breathing"). Matching them is Day 2's job.
@@ -196,6 +249,3 @@ production needs an NVIDIA AI Enterprise licence, or a self-hosted NIM (same cod
 - The triage rules are a demo of the idea. Real reporting clocks depend on expectedness, jurisdiction and your company's procedure.
 - One crew run at a time: the monitor shows a single conversation.
 - The Day 3 tests never call a real model. How well your chosen model does as Critic and Narrative is something to look at in the audit log after a few real runs.
-# Pharmacoviilance
-# Pharmacoviilance
-# Pharmacoviilance

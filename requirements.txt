@@ -1,0 +1,9 @@
+openai>=1.40            # NVIDIA NIM speaks the OpenAI API
+python-dotenv>=1.0      # reads your .env file
+pydantic>=2.5
+requests>=2.31
+autogen-agentchat>=0.7.5,<0.8   # Day 3: the agent crew (AutoGen GraphFlow)
+streamlit>=1.50         # Day 3: the reviewer page
+pytest>=8.0
+# playwright>=1.40      # optional: lets the tests draw the monitor window in a real browser
+# ollama>=0.4           # only if you set PV_PROVIDER=ollama
